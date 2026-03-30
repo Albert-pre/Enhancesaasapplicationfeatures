@@ -1,0 +1,94 @@
+Compagnie	Contrats	"Produit 
+"	Type de commission (Linéaire/Précompte)	Taux de Commission N	Date Souscription	Commission principale N	Date D'effet	Commission secondaire N	Taux N+1	Taux N+2	Taux N+3	Taux N+4	Prime Brute TTC	Répartition Souscription €	Répartition Date D'effet €	Commission N	Commission N+1	
+ NEOLIANE	Santé	QUIETUDE	Précomptée	44%		36%		8%	10%						  -    € 			
+ NEOLIANE	Santé	DYNAMIQUE	Précomptée	44%		36%		8%	10%									
+ NEOLIANE	Santé	PERFORMANCE	Précomptée	44%		36%		8%	10%									
+ NEOLIANE	Santé	INNOV' SANTE	Précomptée	44%		36%		8%	10%									
+ NEOLIANE	Santé	HOSPISANTE	Précomptée	44%		36%		8%	10%									
+ NEOLIANE	Santé	OPTIMA	Précomptée	34%		28%		6%	13%	14%	15%							
+ NEOLIANE	Santé	PLENITUDE	Précomptée	30%		30%		0%	10%									
+ NEOLIANE	Santé	ALTOSANTE	Précomptée	30%		30%		0%	10%									
+ NEOLIANE	Santé	 ENERGIK	Précomptée	30%		30%		0%	10%									
+ NEOLIANE	Santé	PULSE	Précomptée	35%		28%		7%	10%									
+ NEOLIANE	Santé	PULSE	Linéaire	17%		17%		0%	17%									
+ NEOLIANE	Obseques	Viagère	Précomptée	50%		50%		0%	10%									
+ NEOLIANE	Obseques	Tempo 15	Précomptée	35%		35%		0%	10%									
+ NEOLIANE	Obseques	Tempo 20	Précomptée	40%		40%		0%	10%									
+ NEOLIANE	Prevoyance	Multi Accidents	Précomptée	70%		50%		20%	10%									
+ NEOLIANE	Prevoyance	Hospi Zen	Précomptée	90%		65%		25%	10%									
+ NEOLIANE	Prevoyance	Tempo Deces	Précomptée	70%		50%		20%	10%									
+ NEOLIANE	Prevoyance	Chiens/chats	Précomptée	45%		45%		0%	10%									
+ NEOLIANE	Prevoyance	Prevoyance 4en1	Précomptée	70%		50%		20%	10%									
+ NEOLIANE	Prevoyance	 Dependance	Précomptée	45%		40%		5%	10%									
+ NEOLIANE	Prevoyance	Soutien Financier	Précomptée	70%		50%		20%	10%									
+ NEOLIANE	Prevoyance	Protection Gav	Précomptée	60%		40%		20%	10%									
+ NEOLIANE	Prevoyance	Soutien Deces Accidentel	Précomptée	105%		75%		30%	10%									
+ NEOLIANE	Prevoyance	Soutien Juridique	Linéaire	10%		10%		0%	10%									
+ NEOLIANE	Prevoyance	Soutien Hospi	Précomptée	40%		40%		0%	10%									
+ NEOLIANE	Prevoyance	Confort Hospi	Précomptée	90%		65%		25%	10%									
+ ZENIOO	Santé	ZEN SANTE SENIOR	Linéaire	15%		15%		0%	15%									
+ ZENIOO	Santé	ZEN SANTE SENIOR	Précomptée	30%		30%		0%	10%									
+ ZENIOO	Santé	ZEN SANTE CIBLEE	Linéaire	15%		15%		0%	15%									
+ ZENIOO	Santé	ZEN SANTE CIBLEE	Précomptée	30%		30%		0%	10%									
+ ZENIOO	Santé	ZEN SANTE PRO ESSENTIEL	Linéaire	10%		10%		0%	10%									
+ ZENIOO	Santé	ZEN SANTE PRO ESSENTIEL	Linéaire	15%		15%		0%	15%									
+ ZENIOO	Santé	ZEN SANTE PRO ESSENTIEL	Précomptée	25%		25%		0%	15%									
+ ZENIOO	Santé	ZEN SANTE PRO ESSENTIEL	Précomptée	30%		30%		0%	10%									
+ ZENIOO	Santé	ZEN SANTE ECO 	Linéaire	15%		15%		0%	15%									
+ ZENIOO	Santé	ZEN SANTE ECO	Linéaire	22%		22%		0%	22%									
+ ZENIOO	Santé	ZEN SANTE ECO	Précomptée	30%		30%		0%	10%									
+ ZENIOO	Santé	ZEN SANTE ECO	Précomptée	35%		35%		0%	10%									
+ ZENIOO	Santé	ZEN SANTE FLEXI SENIOR 	Linéaire	15%		15%		0%	15%									
+ ZENIOO	Santé	ZEN SANTE EQUILIBRE	Linéaire	15%		15%		0%	15%									
+ ZENIOO	Santé	ZEN SANTE EQUILIBRE	Précomptée	30%		30%		0%	10%									
+ ZENIOO	Prevoyance	IJ hospi accident	Précomptée	70%		70%		0%	10%									
+ ZENIOO	Prevoyance	Décès accident Zenioo	Précomptée	70%		70%		0%	10%									
+ KIASSURE 	Santé	INSTASSUR	Précomptée	40%		32%		8%	10%									
+ KIASSURE 	Santé	GOLDEN SANTÉ	Précomptée	42%		33,6%		8,4%	10%									
+ KIASSURE 	Santé	IZY SANTÉ	Précomptée	27%		21,6%		5,4%	10%									
+ KIASSURE 	Santé	SILVER SANTÉ	Linéaire	20%		20%		0%	20%									
+ KIASSURE 	Prevoyance	GOLDEN PRÉVOYANCE	Précomptée	100%		80%		20%	10%									
+ECA	Santé	Cap Santé Senior	Précomptée	50%		30%		18%	10%									
+ECA	Santé	Capital Senior	Précomptée	40%		30%		8%	10%									
+ECA	Santé	Capital Vitalité Senior	Précomptée	40%		30%		8%	10%									
+ECA	Santé	Sérénissia	Précomptée	35%		25%		8%	10%									
+ECA	Santé	Serenissime	Précomptée	30%		20%		5%	10%									
+ECA	Santé	Santactif	Précomptée	30%		20%		5%	10%									
+ECA	Santé	Option budget	Précomptée	30%		20%		5%	10%									
+ECA	Santé	forticia	Précomptée	50%		30%		18%	10%									
+ECA	Prevoyance	ASSURAX	Précomptée	100%		70%		20%	10%									
+ECA	Prevoyance	ASSUR HOSPI	Précomptée	100%		70%		20%	10%									
+ECA	Prevoyance	Protection juridique	Précomptée	100%		60%		30%	10%									
+ECA	Obseques	Obsèques	Précomptée	60%		30%		25%	10%									
+ECA	Animaux	Animaux	Précomptée	40%		30%		8%	10%									
+ECA	Santé	libreco	Précomptée	30%		20%		5%	10%									
+SPVIE	Santé	Santé Malin	Précomptée	30%		24%		6%	10%									
+SPVIE	Santé	Santé Génius 	Précomptée	35%		28%		7%	10%									
+SPVIE	Santé	Santé Nova 	Précomptée	30%		24%		6%	10%									
+SPVIE	Santé	SPVIE Smart Santé 	Précomptée	35%		28%		7%	10%									
+UTWIN		Vital’Santé																
+UTWIN		Multi’Santé																
+UTWIN		Basic’Santé																
+UTWIN		Basic’Santé Sénior																
+UTWIN		Mixi’Santé																
+UTWIN		Opti’Santé																
+ALPTIS	Santé	SANTÉ SELECT	Précomptée	30%		20%		10%	10%									
+ALPTIS	Santé	ÉQUILIBRE	Précomptée	40%		30%		10%	10%									
+ALPTIS	Santé	PROTECT	Précomptée	40%		30%		10%	10%									
+ALPTIS	Santé	LUMINÉIS	Précomptée	30%		20%		10%	10%									
+ALPTIS	Santé	FRONTALIERS SUISSES	Précomptée	30%		20%		10%	10%									
+SOLLY AZAR	Santé	Santé Senior	Précomptée	30%		30%		0%	10%									
+																		
+																		
+																		
+																		
+																		
+																		
+																		
+																		
+																		
+																		
+																		
+																		
+																		
+																		
