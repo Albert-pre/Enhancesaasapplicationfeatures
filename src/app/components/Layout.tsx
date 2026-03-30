@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   LayoutDashboard, FileText, Package, TrendingUp,
   Calculator, Settings, ChevronLeft, ChevronRight,
-  Bell, User, Menu, X, AlertTriangle, Zap
+  Bell, User, Menu, X, AlertTriangle, Zap, LogOut, Loader2
 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 
 const NAV_ITEMS = [
   { path: '/',           label: 'Dashboard',  icon: LayoutDashboard, end: true },
@@ -20,8 +21,19 @@ const NAV_ITEMS = [
 export function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const location = useLocation();
-  const { renewalAlerts } = useApp();
+  const navigate = useNavigate();
+  const { renewalAlerts, loading } = useApp();
+  const { user, profile, signOut, isConfigured } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth/login');
+  };
+
+  const displayName = profile?.cabinet_name || profile?.first_name || user?.email?.split('@')[0] || 'Mon Cabinet';
+  const displayEmail = user?.email || 'Mode Demo';
 
   const currentPage = NAV_ITEMS.find(item =>
     item.end ? location.pathname === '/' : location.pathname.startsWith(item.path)
@@ -130,14 +142,41 @@ export function Layout() {
 
         {/* User section */}
         <div className="p-3 border-t border-white/10">
-          <div className={`flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors ${collapsed ? 'justify-center' : ''}`}>
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-violet-500 rounded-full flex items-center justify-center flex-shrink-0">
-              <User size={13} className="text-white" />
+          <div className="relative">
+            <div 
+              onClick={() => !collapsed && setShowUserMenu(!showUserMenu)}
+              className={`flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors ${collapsed ? 'justify-center' : ''}`}
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-violet-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <User size={13} className="text-white" />
+              </div>
+              {!collapsed && (
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white truncate" style={{ fontWeight: 500 }}>{displayName}</p>
+                  <p className="text-xs text-slate-400 truncate">{displayEmail}</p>
+                </div>
+              )}
             </div>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-white truncate" style={{ fontWeight: 500 }}>Mon Cabinet</p>
-                <p className="text-xs text-slate-400 truncate">Courtier Indépendant</p>
+            {/* User dropdown menu */}
+            {showUserMenu && !collapsed && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-[#1a2d50] rounded-xl border border-white/10 shadow-xl overflow-hidden">
+                <NavLink
+                  to="/parametres"
+                  onClick={() => setShowUserMenu(false)}
+                  className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-white/5 transition-colors"
+                >
+                  <Settings size={16} />
+                  Parametres
+                </NavLink>
+                {isConfigured && (
+                  <button
+                    onClick={handleSignOut}
+                    className="flex items-center gap-3 w-full px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                  >
+                    <LogOut size={16} />
+                    Deconnexion
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -174,7 +213,14 @@ export function Layout() {
             <button className="relative p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors">
               <Bell size={17} />
             </button>
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-violet-500 rounded-full flex items-center justify-center cursor-pointer">
+            {loading && (
+              <Loader2 size={17} className="text-blue-500 animate-spin" />
+            )}
+            <div 
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="w-8 h-8 bg-gradient-to-br from-blue-400 to-violet-500 rounded-full flex items-center justify-center cursor-pointer"
+              title={displayName}
+            >
               <User size={13} className="text-white" />
             </div>
           </div>

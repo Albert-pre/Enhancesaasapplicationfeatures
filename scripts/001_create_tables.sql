@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   
   -- Financier
   monthly_premium DECIMAL(10,2) NOT NULL,
-  annual_premium DECIMAL(10,2) GENERATED ALWAYS AS (monthly_premium * 12) STORED,
+  annual_premium DECIMAL(10,2),
   payment_frequency TEXT DEFAULT 'mensuel' CHECK (payment_frequency IN ('mensuel', 'trimestriel', 'semestriel', 'annuel')),
   
   -- Commission
