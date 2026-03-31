@@ -1,6 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
 import { Contract, CommissionRule, Company, CashFlowEntry, PortfolioMetrics } from '../data/types';
 import { CONTRACTS, COMMISSION_RULES, COMPANIES, MONTHS_FR } from '../data/mockData';
+import { useAuth } from './AuthContext';
+import { isSupabaseConfigured } from '../lib/supabase';
+import { contractsService } from '../services/contractsService';
+import { companiesService } from '../services/companiesService';
+import { productsService } from '../services/productsService';
 
 interface AppContextType {
   contracts: Contract[];
@@ -10,17 +15,22 @@ interface AppContextType {
   companies: Company[];
   setCompanies: React.Dispatch<React.SetStateAction<Company[]>>;
 
-  addContract: (contract: Contract) => void;
-  updateContract: (id: string, contract: Partial<Contract>) => void;
-  deleteContract: (id: string) => void;
+  addContract: (contract: Contract) => Promise<void>;
+  updateContract: (id: string, contract: Partial<Contract>) => Promise<void>;
+  deleteContract: (id: string) => Promise<void>;
 
-  addCommissionRule: (rule: CommissionRule) => void;
-  updateCommissionRule: (id: string, rule: Partial<CommissionRule>) => void;
-  deleteCommissionRule: (id: string) => void;
+  addCommissionRule: (rule: CommissionRule) => Promise<void>;
+  updateCommissionRule: (id: string, rule: Partial<CommissionRule>) => Promise<void>;
+  deleteCommissionRule: (id: string) => Promise<void>;
 
-  addCompany: (company: Company) => void;
-  updateCompany: (id: string, company: Partial<Company>) => void;
-  deleteCompany: (id: string) => void;
+  addCompany: (company: Company) => Promise<void>;
+  updateCompany: (id: string, company: Partial<Company>) => Promise<void>;
+  deleteCompany: (id: string) => Promise<void>;
+
+  // Data loading state
+  loading: boolean;
+  error: string | null;
+  refreshData: () => Promise<void>;
 
   // Computed metrics
   totalRevenue: number;
@@ -51,8 +61,6 @@ function buildCashFlow(contracts: Contract[]): CashFlowEntry[] {
 
   contracts.forEach(contract => {
     if (contract.statut === 'Résilié') return;
-
-    const now = new Date();
 
     if (contract.typeCommission === 'Précompte') {
       // Commission principale à la souscription
@@ -159,6 +167,13 @@ function computeRenewalAlerts(contracts: Contract[]): RenewalAlert[] {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const supabaseConfigured = isSupabaseConfigured();
+  
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // State for data
   const [contracts, setContracts] = useState<Contract[]>(() => {
     try {
       const stored = localStorage.getItem('commissspro_contracts');
@@ -180,24 +195,197 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch { return COMPANIES; }
   });
 
-  useEffect(() => { localStorage.setItem('commissspro_contracts', JSON.stringify(contracts)); }, [contracts]);
-  useEffect(() => { localStorage.setItem('commissspro_rules', JSON.stringify(commissionRules)); }, [commissionRules]);
-  useEffect(() => { localStorage.setItem('commissspro_companies', JSON.stringify(companies)); }, [companies]);
+  // Load data from Supabase when user is authenticated
+  const loadData = useCallback(async () => {
+    if (!supabaseConfigured || !user) {
+      return;
+    }
 
-  const addContract = (contract: Contract) => setContracts(prev => [contract, ...prev]);
-  const updateContract = (id: string, contract: Partial<Contract>) =>
-    setContracts(prev => prev.map(c => c.id === id ? { ...c, ...contract } : c));
-  const deleteContract = (id: string) => setContracts(prev => prev.filter(c => c.id !== id));
+    setLoading(true);
+    setError(null);
 
-  const addCommissionRule = (rule: CommissionRule) => setCommissionRules(prev => [...prev, rule]);
-  const updateCommissionRule = (id: string, rule: Partial<CommissionRule>) =>
-    setCommissionRules(prev => prev.map(r => r.id === id ? { ...r, ...rule } : r));
-  const deleteCommissionRule = (id: string) => setCommissionRules(prev => prev.filter(r => r.id !== id));
+    try {
+      const [contractsData, companiesData, productsData] = await Promise.all([
+        contractsService.getAll(),
+        companiesService.getAll(),
+        productsService.getAll(),
+      ]);
 
-  const addCompany = (company: Company) => setCompanies(prev => [...prev, company]);
-  const updateCompany = (id: string, company: Partial<Company>) =>
-    setCompanies(prev => prev.map(c => c.id === id ? { ...c, ...company } : c));
-  const deleteCompany = (id: string) => setCompanies(prev => prev.filter(c => c.id !== id));
+      // If we have data from Supabase, use it; otherwise keep mock data
+      if (contractsData.length > 0) {
+        setContracts(contractsData);
+      }
+      if (companiesData.length > 0) {
+        setCompanies(companiesData);
+      }
+      if (productsData.length > 0) {
+        setCommissionRules(productsData);
+      }
+    } catch (err) {
+      console.error('Error loading data:', err);
+      setError('Erreur lors du chargement des donnees');
+    } finally {
+      setLoading(false);
+    }
+  }, [supabaseConfigured, user]);
+
+  // Refresh data function
+  const refreshData = useCallback(async () => {
+    await loadData();
+  }, [loadData]);
+
+  // Load data on mount and when user changes
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Persist to localStorage when not using Supabase
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      localStorage.setItem('commissspro_contracts', JSON.stringify(contracts));
+    }
+  }, [contracts, supabaseConfigured]);
+
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      localStorage.setItem('commissspro_rules', JSON.stringify(commissionRules));
+    }
+  }, [commissionRules, supabaseConfigured]);
+
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      localStorage.setItem('commissspro_companies', JSON.stringify(companies));
+    }
+  }, [companies, supabaseConfigured]);
+
+  // Contract operations
+  const addContract = async (contract: Contract) => {
+    if (supabaseConfigured && user) {
+      try {
+        const newContract = await contractsService.create(contract, user.id);
+        setContracts(prev => [newContract, ...prev]);
+      } catch (err) {
+        console.error('Error adding contract:', err);
+        throw err;
+      }
+    } else {
+      setContracts(prev => [contract, ...prev]);
+    }
+  };
+
+  const updateContract = async (id: string, updates: Partial<Contract>) => {
+    if (supabaseConfigured && user) {
+      try {
+        const updatedContract = await contractsService.update(id, updates);
+        setContracts(prev => prev.map(c => c.id === id ? updatedContract : c));
+      } catch (err) {
+        console.error('Error updating contract:', err);
+        throw err;
+      }
+    } else {
+      setContracts(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    }
+  };
+
+  const deleteContract = async (id: string) => {
+    if (supabaseConfigured && user) {
+      try {
+        await contractsService.delete(id);
+        setContracts(prev => prev.filter(c => c.id !== id));
+      } catch (err) {
+        console.error('Error deleting contract:', err);
+        throw err;
+      }
+    } else {
+      setContracts(prev => prev.filter(c => c.id !== id));
+    }
+  };
+
+  // Commission rule operations
+  const addCommissionRule = async (rule: CommissionRule) => {
+    if (supabaseConfigured && user) {
+      try {
+        const newRule = await productsService.create(rule, user.id);
+        setCommissionRules(prev => [...prev, newRule]);
+      } catch (err) {
+        console.error('Error adding commission rule:', err);
+        throw err;
+      }
+    } else {
+      setCommissionRules(prev => [...prev, rule]);
+    }
+  };
+
+  const updateCommissionRule = async (id: string, updates: Partial<CommissionRule>) => {
+    if (supabaseConfigured && user) {
+      try {
+        const updatedRule = await productsService.update(id, updates);
+        setCommissionRules(prev => prev.map(r => r.id === id ? updatedRule : r));
+      } catch (err) {
+        console.error('Error updating commission rule:', err);
+        throw err;
+      }
+    } else {
+      setCommissionRules(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+    }
+  };
+
+  const deleteCommissionRule = async (id: string) => {
+    if (supabaseConfigured && user) {
+      try {
+        await productsService.delete(id);
+        setCommissionRules(prev => prev.filter(r => r.id !== id));
+      } catch (err) {
+        console.error('Error deleting commission rule:', err);
+        throw err;
+      }
+    } else {
+      setCommissionRules(prev => prev.filter(r => r.id !== id));
+    }
+  };
+
+  // Company operations
+  const addCompany = async (company: Company) => {
+    if (supabaseConfigured && user) {
+      try {
+        const newCompany = await companiesService.create(company, user.id);
+        setCompanies(prev => [...prev, newCompany]);
+      } catch (err) {
+        console.error('Error adding company:', err);
+        throw err;
+      }
+    } else {
+      setCompanies(prev => [...prev, company]);
+    }
+  };
+
+  const updateCompany = async (id: string, updates: Partial<Company>) => {
+    if (supabaseConfigured && user) {
+      try {
+        const updatedCompany = await companiesService.update(id, updates);
+        setCompanies(prev => prev.map(c => c.id === id ? updatedCompany : c));
+      } catch (err) {
+        console.error('Error updating company:', err);
+        throw err;
+      }
+    } else {
+      setCompanies(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    }
+  };
+
+  const deleteCompany = async (id: string) => {
+    if (supabaseConfigured && user) {
+      try {
+        await companiesService.delete(id);
+        setCompanies(prev => prev.filter(c => c.id !== id));
+      } catch (err) {
+        console.error('Error deleting company:', err);
+        throw err;
+      }
+    } else {
+      setCompanies(prev => prev.filter(c => c.id !== id));
+    }
+  };
 
   const activeContracts = contracts.filter(c => c.statut === 'Actif');
 
@@ -253,6 +441,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addContract, updateContract, deleteContract,
       addCommissionRule, updateCommissionRule, deleteCommissionRule,
       addCompany, updateCompany, deleteCompany,
+      loading, error, refreshData,
       totalRevenue, forecastRevenue, activeContractsCount,
       cashFlow, portfolioMetrics, renewalAlerts,
     }}>
