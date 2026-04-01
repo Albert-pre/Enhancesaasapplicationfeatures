@@ -1,5 +1,5 @@
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "https://104e2d5b.premunia-6ku.pages.dev",
+  "Access-Control-Allow-Origin": "https://d1cca04b.premunia-6ku.pages.dev",
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
