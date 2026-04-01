@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   LayoutDashboard, FileText, Package, TrendingUp,
   Calculator, Settings, ChevronLeft, ChevronRight,
-  Bell, User, Menu, X, AlertTriangle, Zap, LogOut, Loader2
+  Bell, User, Menu, X, AlertTriangle, Zap, LogOut, Loader2, Wallet
 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { useApp } from '../context/AppContext';
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { path: '/produits',   label: 'Produits',   icon: Package,         end: false },
   { path: '/revenus',    label: 'Revenus',    icon: TrendingUp,      end: false },
   { path: '/simulation', label: 'Simulation', icon: Calculator,      end: false },
+  { path: '/pl',         label: 'P&L',        icon: Wallet,          end: false },
   { path: '/parametres', label: 'Paramètres', icon: Settings,        end: false },
 ];
 

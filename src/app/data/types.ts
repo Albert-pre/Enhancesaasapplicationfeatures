@@ -23,6 +23,16 @@ export interface Contract {
   commissionN1: number;   // commission année N+1 (annuelle)
   statut: 'Actif' | 'Résilié' | 'En attente' | 'Suspendu';
   notes?: string;
+  attribution?: string;
+  charge?: number;
+  depenses?: number;
+  frais?: number;
+  baseDelayMonths?: number;
+  secondaryDelayMonths?: number;
+  n1DelayMonths?: number;
+  baseReference?: 'souscription' | 'effet' | 'premiere_prime';
+  secondaryReference?: 'souscription' | 'effet' | 'premiere_prime';
+  n1Reference?: 'souscription' | 'effet' | 'premiere_prime';
 }
 
 export interface CommissionRule {
@@ -38,6 +48,12 @@ export interface CommissionRule {
   tauxN1: number;          // Taux N+1
   tauxN2?: number;
   tauxN3?: number;
+  baseDelayMonths?: number;
+  secondaryDelayMonths?: number;
+  n1DelayMonths?: number;
+  baseReference?: 'souscription' | 'effet' | 'premiere_prime';
+  secondaryReference?: 'souscription' | 'effet' | 'premiere_prime';
+  n1Reference?: 'souscription' | 'effet' | 'premiere_prime';
 }
 
 export interface Company {
@@ -81,6 +97,12 @@ export interface SimulationParams {
   tauxN1: number;
   duree: number;
   dateDebut: string;
+  baseDelayMonths?: number;
+  secondaryDelayMonths?: number;
+  n1DelayMonths?: number;
+  baseReference?: 'souscription' | 'effet' | 'premiere_prime';
+  secondaryReference?: 'souscription' | 'effet' | 'premiere_prime';
+  n1Reference?: 'souscription' | 'effet' | 'premiere_prime';
 }
 
 export interface SimulationResult {

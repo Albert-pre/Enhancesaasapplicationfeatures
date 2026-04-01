@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "test": "jest",
+    "test-commissions": "node test-commissions.js"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -45,7 +47,10 @@
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
+    "dotenv": "^16.0.0",
     "embla-carousel-react": "8.6.0",
+    "exceljs": "^4.4.0",
+    "googleapis": "^118.0.0",
     "input-otp": "1.4.2",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
@@ -64,15 +69,16 @@
     "sonner": "2.0.3",
     "tailwind-merge": "3.2.0",
     "tw-animate-css": "1.3.8",
-    "vaul": "1.1.2",
-    "xlsx": "^0.18.5",
-    "@supabase/supabase-js": "^2.49.1"
+    "vaul": "1.1.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
+    "@types/jest": "^30.0.0",
     "@vitejs/plugin-react": "4.7.0",
+    "jest": "^30.3.0",
     "tailwindcss": "4.1.12",
-    "vite": "6.3.5"
+    "ts-jest": "^29.4.6",
+    "vite": "^6.4.1"
   },
   "peerDependencies": {
     "react": "18.3.1",

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Download, TrendingUp, Euro, Calendar, BarChart2, Activity, ArrowUpRight } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, ComposedChart, Line,
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import Papa from 'papaparse';
 import { useApp } from '../context/AppContext';
 import { MONTHLY_REVENUE, formatCurrency, MONTHS_FR, COMPANY_COLORS } from '../data/mockData';
+import { contractsService, type CommercialPerformance } from '../services/contractsService';
 
 const MONTH_NAMES: Record<string, string> = {
   'Jan': 'Janvier', 'Fév': 'Février', 'Mar': 'Mars', 'Avr': 'Avril',
@@ -39,14 +40,37 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 type ViewMode = 'mensuel' | 'cumulatif' | 'cashflow';
 type YearFilter = 2025 | 2026;
+type RevenueTab = 'revenus' | 'commercial';
 
 export default function Revenus() {
   const { contracts, companies, cashFlow } = useApp();
   const [selectedYear, setSelectedYear] = useState<YearFilter>(2026);
   const [filterCompany, setFilterCompany] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('cumulatif');
+  const [activeTab, setActiveTab] = useState<RevenueTab>('revenus');
+  const [commercialPerformance, setCommercialPerformance] = useState<CommercialPerformance[]>([]);
 
   const yearData = MONTHLY_REVENUE.filter(d => d.annee === selectedYear);
+
+  useEffect(() => {
+    let mounted = true;
+    contractsService.getCommercialPerformance()
+      .then((data) => {
+        if (mounted) setCommercialPerformance(data);
+      })
+      .catch(() => {
+        if (mounted) setCommercialPerformance([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'commercial') {
+      document.getElementById('commercial-performance')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [activeTab]);
 
   // ── Main Chart Data ──────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -149,6 +173,21 @@ export default function Revenus() {
           <p className="text-slate-500 text-sm mt-0.5">Projections & flux de trésorerie basés sur vos contrats réels</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+            {([
+              { id: 'revenus' as RevenueTab, label: 'Revenus' },
+              { id: 'commercial' as RevenueTab, label: 'Performance commerciale' },
+            ]).map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs transition-colors ${activeTab === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                style={{ fontWeight: activeTab === id ? 600 : 400 }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value) as YearFilter)}
             className="text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-700 focus:outline-none">
             <option value={2025}>2025</option>
@@ -167,115 +206,119 @@ export default function Revenus() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: `Réalisé ${selectedYear}`, value: formatCurrency(totalReel), icon: Euro, color: 'blue', trend: `${realMonths} mois` },
-          { label: 'Objectif annuel', value: formatCurrency(totalPrevu), icon: TrendingUp, color: 'violet', trend: '+12% vs 2025' },
-          { label: 'Moyenne mensuelle', value: formatCurrency(avgMensuel), icon: Calendar, color: 'emerald', trend: 'Réalisé' },
-          { label: 'Taux de réalisation', value: `${tauxRealisation.toFixed(0)}%`, icon: BarChart2, color: tauxRealisation >= 100 ? 'emerald' : 'amber', trend: 'YTD proratisé' },
-        ].map((kpi, i) => {
-          const Icon = kpi.icon;
-          const colorMap: Record<string, string> = { blue: '#2563eb', violet: '#7c3aed', emerald: '#059669', amber: '#d97706' };
-          return (
-            <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/60">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${colorMap[kpi.color]}15` }}>
-                  <Icon size={16} style={{ color: colorMap[kpi.color] }} />
+      {activeTab === 'revenus' && (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label: `Réalisé ${selectedYear}`, value: formatCurrency(totalReel), icon: Euro, color: 'blue', trend: `${realMonths} mois` },
+              { label: 'Objectif annuel', value: formatCurrency(totalPrevu), icon: TrendingUp, color: 'violet', trend: '+12% vs 2025' },
+              { label: 'Moyenne mensuelle', value: formatCurrency(avgMensuel), icon: Calendar, color: 'emerald', trend: 'Réalisé' },
+              { label: 'Taux de réalisation', value: `${tauxRealisation.toFixed(0)}%`, icon: BarChart2, color: tauxRealisation >= 100 ? 'emerald' : 'amber', trend: 'YTD proratisé' },
+            ].map((kpi, i) => {
+              const Icon = kpi.icon;
+              const colorMap: Record<string, string> = { blue: '#2563eb', violet: '#7c3aed', emerald: '#059669', amber: '#d97706' };
+              return (
+                <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/60">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${colorMap[kpi.color]}15` }}>
+                      <Icon size={16} style={{ color: colorMap[kpi.color] }} />
+                    </div>
+                    <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full" style={{ fontWeight: 500 }}>
+                      {kpi.trend}
+                    </span>
+                  </div>
+                  <p className="text-xl text-slate-800" style={{ fontWeight: 800 }}>{kpi.value}</p>
+                  <p className="text-xs text-slate-500 mt-0.5" style={{ fontWeight: 500 }}>{kpi.label}</p>
                 </div>
-                <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full" style={{ fontWeight: 500 }}>
-                  {kpi.trend}
-                </span>
+              );
+            })}
+          </div>
+
+          {/* Chart Section */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/60">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+              <div>
+                <h3 className="text-slate-800" style={{ fontWeight: 700 }}>Évolution des Revenus — {selectedYear}</h3>
+                <p className="text-slate-400 text-xs mt-0.5">
+                  {viewMode === 'cashflow' ? 'Flux de commissions par type (données contrats)' : 'Commissions réelles et projections historiques'}
+                </p>
               </div>
-              <p className="text-xl text-slate-800" style={{ fontWeight: 800 }}>{kpi.value}</p>
-              <p className="text-xs text-slate-500 mt-0.5" style={{ fontWeight: 500 }}>{kpi.label}</p>
+              <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+                {([
+                  { id: 'cumulatif' as ViewMode, label: 'Cumulatif' },
+                  { id: 'mensuel' as ViewMode, label: 'Mensuel' },
+                  { id: 'cashflow' as ViewMode, label: 'Cash-Flow' },
+                ]).map(({ id, label }) => (
+                  <button key={id} onClick={() => setViewMode(id)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs transition-colors ${viewMode === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    style={{ fontWeight: viewMode === id ? 600 : 400 }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* Chart Section */}
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/60">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
-          <div>
-            <h3 className="text-slate-800" style={{ fontWeight: 700 }}>Évolution des Revenus — {selectedYear}</h3>
-            <p className="text-slate-400 text-xs mt-0.5">
-              {viewMode === 'cashflow' ? 'Flux de commissions par type (données contrats)' : 'Commissions réelles et projections historiques'}
-            </p>
+            <ResponsiveContainer width="100%" height={280}>
+              {viewMode === 'cashflow' ? (
+                <BarChart data={cashFlowChartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="mois" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(1)}k€` : ''} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend formatter={(value) => <span className="text-xs text-slate-600">{value}</span>} />
+                  <Bar dataKey="Principale" fill="#2563eb" radius={[3, 3, 0, 0]} maxBarSize={30} stackId="a" />
+                  <Bar dataKey="Secondaire" fill="#7c3aed" radius={[0, 0, 0, 0]} maxBarSize={30} stackId="a" />
+                  <Bar dataKey="N+1" fill="#059669" radius={[3, 3, 0, 0]} maxBarSize={30} stackId="a" />
+                </BarChart>
+              ) : viewMode === 'cumulatif' ? (
+                <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <defs>
+                    <linearGradient id="gradReelR" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradPrevuR" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="mois" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(0)}k€` : ''} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="Cumulatif réel" stroke="#2563eb" strokeWidth={2.5} fill="url(#gradReelR)" dot={{ r: 3, fill: '#2563eb' }} connectNulls={false} />
+                  <Area type="monotone" dataKey="Cumulatif prévu" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 3" fill="url(#gradPrevuR)" dot={false} />
+                </AreaChart>
+              ) : (
+                <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="mois" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(0)}k€` : ''} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="Réel" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                  <Bar dataKey="Prévision" fill="#dbeafe" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+
+            <div className="flex items-center gap-4 mt-2">
+              {viewMode === 'cashflow' ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-blue-500 rounded" /> Commission Principale</span>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-violet-500 rounded" /> Commission Secondaire</span>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-emerald-500 rounded" /> N+1</span>
+                </>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-blue-500 rounded" /> Réel</span>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-blue-200 rounded" /> Prévision</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
-            {([
-              { id: 'cumulatif' as ViewMode, label: 'Cumulatif' },
-              { id: 'mensuel' as ViewMode, label: 'Mensuel' },
-              { id: 'cashflow' as ViewMode, label: 'Cash-Flow' },
-            ]).map(({ id, label }) => (
-              <button key={id} onClick={() => setViewMode(id)}
-                className={`px-2.5 py-1.5 rounded-lg text-xs transition-colors ${viewMode === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                style={{ fontWeight: viewMode === id ? 600 : 400 }}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <ResponsiveContainer width="100%" height={280}>
-          {viewMode === 'cashflow' ? (
-            <BarChart data={cashFlowChartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="mois" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(1)}k€` : ''} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend formatter={(value) => <span className="text-xs text-slate-600">{value}</span>} />
-              <Bar dataKey="Principale" fill="#2563eb" radius={[3, 3, 0, 0]} maxBarSize={30} stackId="a" />
-              <Bar dataKey="Secondaire" fill="#7c3aed" radius={[0, 0, 0, 0]} maxBarSize={30} stackId="a" />
-              <Bar dataKey="N+1" fill="#059669" radius={[3, 3, 0, 0]} maxBarSize={30} stackId="a" />
-            </BarChart>
-          ) : viewMode === 'cumulatif' ? (
-            <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-              <defs>
-                <linearGradient id="gradReelR" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradPrevuR" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="mois" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(0)}k€` : ''} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="Cumulatif réel" stroke="#2563eb" strokeWidth={2.5} fill="url(#gradReelR)" dot={{ r: 3, fill: '#2563eb' }} connectNulls={false} />
-              <Area type="monotone" dataKey="Cumulatif prévu" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 3" fill="url(#gradPrevuR)" dot={false} />
-            </AreaChart>
-          ) : (
-            <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="mois" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(0)}k€` : ''} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="Réel" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              <Bar dataKey="Prévision" fill="#dbeafe" radius={[4, 4, 0, 0]} maxBarSize={40} />
-            </BarChart>
-          )}
-        </ResponsiveContainer>
-
-        <div className="flex items-center gap-4 mt-2">
-          {viewMode === 'cashflow' ? (
-            <>
-              <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-blue-500 rounded" /> Commission Principale</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-violet-500 rounded" /> Commission Secondaire</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-emerald-500 rounded" /> N+1</span>
-            </>
-          ) : (
-            <>
-              <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-blue-500 rounded" /> Réel</span>
-              <span className="flex items-center gap-1.5 text-xs text-slate-500"><div className="w-3 h-2 bg-blue-200 rounded" /> Prévision</span>
-            </>
-          )}
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Company Revenue */}
       {companyRevenue.length > 0 && (
@@ -323,6 +366,45 @@ export default function Revenus() {
         </div>
       )}
 
+      {activeTab === 'commercial' && commercialPerformance.length > 0 && (
+        <div id="commercial-performance" className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/60">
+          <h3 className="text-slate-800 mb-5" style={{ fontWeight: 700 }}>Performance par Commercial (Attribution)</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/50">
+                  {['Commercial', 'Contrats', 'Actifs', 'Prime mensuelle', 'Commission N', 'Commission N+1', 'Total commissions'].map(h => (
+                    <th key={h} className="px-3 py-2 text-left text-xs text-slate-400 whitespace-nowrap" style={{ fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {commercialPerformance.map((row) => (
+                  <tr key={row.commercial} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-3 py-3 text-sm text-slate-800" style={{ fontWeight: 600 }}>{row.commercial}</td>
+                    <td className="px-3 py-3 text-sm text-slate-600">{row.contratsTotal}</td>
+                    <td className="px-3 py-3 text-sm text-slate-600">{row.contratsActifs}</td>
+                    <td className="px-3 py-3 text-sm text-slate-600">{formatCurrency(row.primeMensuelleTotale)}</td>
+                    <td className="px-3 py-3 text-sm text-blue-600" style={{ fontWeight: 600 }}>{formatCurrency(row.commissionN)}</td>
+                    <td className="px-3 py-3 text-sm text-emerald-600" style={{ fontWeight: 600 }}>{formatCurrency(row.commissionN1)}</td>
+                    <td className="px-3 py-3 text-sm text-slate-800" style={{ fontWeight: 700 }}>{formatCurrency(row.commissionTotale)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'commercial' && commercialPerformance.length === 0 && (
+        <div id="commercial-performance" className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/60">
+          <h3 className="text-slate-800 mb-2" style={{ fontWeight: 700 }}>Performance par Commercial (Attribution)</h3>
+          <p className="text-sm text-slate-500">Aucune donnée trouvée pour le champ `Projet - Attribution`.</p>
+        </div>
+      )}
+
+      {activeTab === 'revenus' && (
+      <>
       {/* Monthly Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
@@ -415,6 +497,8 @@ export default function Revenus() {
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

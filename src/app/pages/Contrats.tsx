@@ -4,11 +4,11 @@ import {
   Pencil, Trash2, Eye, AlertTriangle, TrendingUp, Euro, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import Papa from 'papaparse';
 import { useApp } from '../context/AppContext';
 import { Contract } from '../data/types';
-import { formatCurrency, COMPANY_COLORS, CATEGORIES, computeCommissions } from '../data/mockData';
+import { formatCurrency, formatCurrencyFull, COMPANY_COLORS, CATEGORIES, computeCommissions } from '../data/mockData';
 
 const STATUS_COLORS: Record<string, string> = {
   'Actif':      'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -16,6 +16,54 @@ const STATUS_COLORS: Record<string, string> = {
   'Résilié':    'bg-red-50 text-red-700 border-red-200',
   'Suspendu':   'bg-slate-100 text-slate-600 border-slate-200',
 };
+
+function parseFrDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  // Expected format dd/MM/yyyy
+  const parts = value.split('/');
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts.map(p => Number(p));
+  if (!dd || !mm || !yyyy) return null;
+  return new Date(yyyy, mm - 1, dd);
+}
+
+function addMonths(date: Date, months: number): Date {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+function formatMonthYear(date: Date): string {
+  return date.toLocaleDateString('fr-FR', { year: 'numeric', month: 'short' });
+}
+
+function getReferenceDate(contract: Contract, ref?: any): Date | null {
+  const souscription = parseFrDate(contract.dateSouscription);
+  const effet = parseFrDate(contract.dateEffet);
+  if (ref === 'effet') return effet || souscription;
+  if (ref === 'premiere_prime') return effet ? addMonths(effet, 1) : souscription;
+  // default = souscription
+  return souscription || effet;
+}
+
+function frToIsoDate(value?: string): string | undefined {
+  if (!value) return undefined;
+  if (value.includes('-')) return value; // déjà ISO
+  const parts = value.split('/');
+  if (parts.length !== 3) return undefined;
+  const [dd, mm, yyyy] = parts;
+  if (!dd || !mm || !yyyy) return undefined;
+  return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+}
+
+function isoToFrDate(value?: string): string | undefined {
+  if (!value) return undefined;
+  if (value.includes('/')) return value; // déjà FR
+  const parts = value.split('-');
+  if (parts.length !== 3) return undefined;
+  const [yyyy, mm, dd] = parts;
+  return `${dd.padStart(2, '0')}/${mm.padStart(2, '0')}/${yyyy}`;
+}
 
 function ContractModal({ contract, onClose, onSave, companies, commissionRules }: {
   contract: Partial<Contract> | null;
@@ -31,6 +79,12 @@ function ContractModal({ contract, onClose, onSave, companies, commissionRules }
   });
 
   const companyRules = commissionRules.filter(r => r.compagnie === form.compagnie);
+  const productOptions = [
+    ...new Set([
+      ...companyRules.map(r => r.produit),
+      ...(form.produit ? [form.produit] : []),
+    ]),
+  ];
 
   const handleRuleSelect = (produit: string) => {
     const rule = companyRules.find(r => r.produit === produit);
@@ -76,8 +130,8 @@ function ContractModal({ contract, onClose, onSave, companies, commissionRules }
       tauxCommission: tauxTotal,
       tauxBase,
       tauxSecondaire,
-      dateSouscription: form.dateSouscription || new Date().toISOString().split('T')[0],
-      dateEffet: form.dateEffet || new Date().toISOString().split('T')[0],
+      dateSouscription: isoToFrDate(form.dateSouscription as string | undefined) || new Date().toISOString().split('T')[0],
+      dateEffet: isoToFrDate(form.dateEffet as string | undefined) || isoToFrDate(form.dateSouscription as string | undefined) || new Date().toISOString().split('T')[0],
       tauxN1,
       primeBrute,
       commissionPrincipale,
@@ -138,8 +192,7 @@ function ContractModal({ contract, onClose, onSave, companies, commissionRules }
                 <select value={form.produit || ''} onChange={e => handleRuleSelect(e.target.value)}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
                   <option value="">Sélectionner...</option>
-                  {companyRules.map(r => <option key={r.id || r.produit} value={r.produit}>{r.produit}</option>)}
-                  <option value="__custom">Produit personnalisé...</option>
+                  {productOptions.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div>
@@ -236,13 +289,21 @@ function ContractModal({ contract, onClose, onSave, companies, commissionRules }
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-slate-500 mb-1" style={{ fontWeight: 500 }}>Date souscription</label>
-              <input type="date" value={form.dateSouscription || ''} onChange={e => setForm(p => ({ ...p, dateSouscription: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+              <input
+                type="date"
+                value={frToIsoDate(form.dateSouscription as string | undefined) || ''}
+                onChange={e => setForm(p => ({ ...p, dateSouscription: e.target.value }))}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1" style={{ fontWeight: 500 }}>Date d'effet</label>
-              <input type="date" value={form.dateEffet || ''} onChange={e => setForm(p => ({ ...p, dateEffet: e.target.value }))}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+              <input
+                type="date"
+                value={frToIsoDate(form.dateEffet as string | undefined) || ''}
+                onChange={e => setForm(p => ({ ...p, dateEffet: e.target.value }))}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
             </div>
             <div>
               <label className="block text-xs text-slate-500 mb-1" style={{ fontWeight: 500 }}>Statut</label>
@@ -317,23 +378,62 @@ export default function Contrats() {
     toast.success('Export CSV réalisé !');
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Contrats');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'NOM', key: 'nom', width: 15 },
+      { header: 'PRENOM', key: 'prenom', width: 15 },
+      { header: 'COMPAGNIE', key: 'compagnie', width: 20 },
+      { header: 'CATEGORIE', key: 'categorie', width: 15 },
+      { header: 'PRODUIT', key: 'produit', width: 20 },
+      { header: 'FORMULE', key: 'formule', width: 15 },
+      { header: 'TYPE', key: 'typeCommission', width: 15 },
+      { header: 'TAUX N (%)', key: 'tauxCommission', width: 12 },
+      { header: 'DATE SOUSCRIPTION', key: 'dateSouscription', width: 18 },
+      { header: 'DATE EFFET', key: 'dateEffet', width: 15 },
+      { header: 'PRIME (€)', key: 'primeBrute', width: 12 },
+      { header: 'COMM. PRINCIPALE (€)', key: 'commissionPrincipale', width: 18 },
+      { header: 'COMM. SECONDAIRE (€)', key: 'commissionSecondaire', width: 18 },
+      { header: 'COMM. N (€)', key: 'commissionN', width: 15 },
+      { header: 'COMM. N+1 (€)', key: 'commissionN1', width: 15 },
+      { header: 'STATUT', key: 'statut', width: 12 },
+    ];
+
+    // Add data rows
     const data = contracts.map(c => ({
-      'NOM': c.nom, 'PRENOM': c.prenom, 'COMPAGNIE': c.compagnie,
-      'CATEGORIE': c.categorie, 'PRODUIT': c.produit, 'FORMULE': c.formule,
-      'TYPE': c.typeCommission, 'TAUX N (%)': c.tauxCommission,
-      'DATE SOUSCRIPTION': c.dateSouscription, "DATE EFFET": c.dateEffet,
-      'PRIME (€)': c.primeBrute,
-      'COMM. PRINCIPALE (€)': c.commissionPrincipale.toFixed(2),
-      'COMM. SECONDAIRE (€)': c.commissionSecondaire.toFixed(2),
-      'COMM. N (€)': c.commissionN.toFixed(2),
-      'COMM. N+1 (€)': c.commissionN1.toFixed(2),
-      'STATUT': c.statut,
+      nom: c.nom,
+      prenom: c.prenom,
+      compagnie: c.compagnie,
+      categorie: c.categorie,
+      produit: c.produit,
+      formule: c.formule,
+      typeCommission: c.typeCommission,
+      tauxCommission: c.tauxCommission,
+      dateSouscription: c.dateSouscription,
+      dateEffet: c.dateEffet,
+      primeBrute: c.primeBrute,
+      commissionPrincipale: parseFloat(c.commissionPrincipale.toFixed(2)),
+      commissionSecondaire: parseFloat(c.commissionSecondaire.toFixed(2)),
+      commissionN: parseFloat(c.commissionN.toFixed(2)),
+      commissionN1: parseFloat(c.commissionN1.toFixed(2)),
+      statut: c.statut,
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Contrats');
-    XLSX.writeFile(wb, `contrats_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    worksheet.addRows(data);
+
+    // Style the header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE6E6FA' }
+    };
+
+    const filename = `contrats_${new Date().toISOString().split('T')[0]}.xlsx`;
+    await workbook.xlsx.writeFile(filename);
     toast.success('Export Excel réalisé !');
   };
 
@@ -442,7 +542,7 @@ export default function Contrats() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Total contrats', value: contracts.length.toString(), icon: FileSpreadsheet, color: '#2563eb' },
-          { label: 'Primes mensuelles', value: formatCurrency(totalPrime), icon: Euro, color: '#7c3aed' },
+          { label: 'Primes mensuelles', value: formatCurrencyFull(totalPrime), icon: Euro, color: '#7c3aed' },
           { label: 'Commissions N', value: formatCurrency(totalCommN), icon: TrendingUp, color: '#059669' },
           { label: 'Commissions N+1', value: formatCurrency(totalCommN1), icon: Clock, color: '#d97706' },
         ].map((item, i) => {
@@ -530,7 +630,7 @@ export default function Contrats() {
                         {contract.typeCommission === 'Précompte' ? 'P' : 'L'} · {contract.tauxCommission}%
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">{formatCurrency(contract.primeBrute)}/m</td>
+                    <td className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">{formatCurrencyFull(contract.primeBrute)}/m</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <p className="text-sm text-blue-700" style={{ fontWeight: 700 }}>{formatCurrency(contract.commissionN)}</p>
                       {contract.commissionSecondaire > 0 && (
@@ -602,7 +702,7 @@ export default function Contrats() {
                   { label: 'Taux base (souscription)', value: `${selectedContract.tauxBase}%` },
                   { label: "Taux secondaire (effet)", value: `${selectedContract.tauxSecondaire}%` },
                   { label: 'Taux N+1', value: `${selectedContract.tauxN1}%` },
-                  { label: 'Prime mensuelle', value: `${formatCurrency(selectedContract.primeBrute)}/mois` },
+                  { label: 'Prime mensuelle', value: `${formatCurrencyFull(selectedContract.primeBrute)}/mois` },
                   { label: 'Date souscription', value: selectedContract.dateSouscription },
                   { label: "Date d'effet", value: selectedContract.dateEffet },
                 ].map(({ label, value }) => (
@@ -620,13 +720,50 @@ export default function Contrats() {
                       <p className="text-xs text-blue-600" style={{ fontWeight: 500 }}>Commission N</p>
                       {selectedContract.commissionSecondaire > 0 && (
                         <p className="text-xs text-blue-400 mt-0.5">
-                          {formatCurrency(selectedContract.commissionPrincipale)} souscription
-                          + {formatCurrency(selectedContract.commissionSecondaire)} effet
+                          {formatCurrency(selectedContract.commissionPrincipale)} base
+                          + {formatCurrency(selectedContract.commissionSecondaire)} secondaire
                         </p>
                       )}
                     </div>
                     <span className="text-blue-800" style={{ fontWeight: 800 }}>{formatCurrency(selectedContract.commissionN)}</span>
                   </div>
+
+                  {(() => {
+                    const baseRef = selectedContract.baseReference || 'souscription';
+                    const secRef = selectedContract.secondaryReference || 'effet';
+                    const baseDelay = selectedContract.baseDelayMonths ?? 1;
+                    const secDelay = selectedContract.secondaryDelayMonths ?? 4;
+                    const n1Delay = selectedContract.n1DelayMonths ?? 12;
+                    const n1Ref = selectedContract.n1Reference || 'effet';
+
+                    const baseDate = getReferenceDate(selectedContract, baseRef);
+                    const secDate = getReferenceDate(selectedContract, secRef);
+                    const n1Date = getReferenceDate(selectedContract, n1Ref);
+
+                    if (!baseDate || !secDate || !n1Date) return null;
+
+                    const basePay = addMonths(baseDate, baseDelay);
+                    const secPay = addMonths(secDate, secDelay);
+                    const n1Pay = addMonths(n1Date, n1Delay);
+
+                    return (
+                      <div className="mt-2 text-xs text-slate-600">
+                        Versement estimé :
+                        <div className="mt-1 flex justify-between gap-2">
+                          <span>Base</span>
+                          <span style={{ fontWeight: 600 }}>{formatMonthYear(basePay)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span>Secondaire</span>
+                          <span style={{ fontWeight: 600 }}>{formatMonthYear(secPay)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span>N+1</span>
+                          <span style={{ fontWeight: 600 }}>{formatMonthYear(n1Pay)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex justify-between items-center bg-violet-50 rounded-xl p-3">
                   <span className="text-xs text-violet-700">Commission N+1</span>

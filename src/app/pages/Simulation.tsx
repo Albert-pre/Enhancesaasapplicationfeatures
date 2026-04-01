@@ -39,6 +39,18 @@ function calculateSimulation(params: SimulationParams): SimulationResult[] {
   const moisDebut = startDate.getMonth();
   const yearDebut = startDate.getFullYear();
   const primeAnnuelle = params.primeMensuelle * 12;
+  const baseDelay = Math.max(0, params.baseDelayMonths ?? 0);
+  const secondaryDelay = Math.max(0, params.secondaryDelayMonths ?? 4);
+  const n1Delay = Math.max(0, params.n1DelayMonths ?? 12);
+  const referenceOffset = (ref?: 'souscription' | 'effet' | 'premiere_prime') => {
+    if (ref === 'effet') return 1;
+    if (ref === 'premiere_prime') return 2;
+    return 0;
+  };
+
+  const baseStart = referenceOffset(params.baseReference) + baseDelay;
+  const secondaryStart = referenceOffset(params.secondaryReference) + secondaryDelay;
+  const n1Start = referenceOffset(params.n1Reference) + n1Delay;
 
   if (params.typeCommission === 'Précompte') {
     // Mois 0: commission principale à la souscription
@@ -53,13 +65,13 @@ function calculateSimulation(params: SimulationParams): SimulationResult[] {
       let commSecondaire = 0;
       let commN1 = 0;
 
-      if (i === 0) {
+      if (i === baseStart) {
         commPrincipale = primeAnnuelle * params.tauxBase / 100;
       }
-      if (i === 1 && params.tauxSecondaire > 0) {
+      if (i === secondaryStart && params.tauxSecondaire > 0) {
         commSecondaire = primeAnnuelle * params.tauxSecondaire / 100;
       }
-      if (i >= 12) {
+      if (i >= n1Start) {
         commN1 = params.primeMensuelle * params.tauxN1 / 100; // mensuelle
       }
 
@@ -115,6 +127,12 @@ const DEFAULT_PARAMS: SimulationParams = {
   tauxN1: 10,
   duree: 24,
   dateDebut: '2026-03-01',
+  baseDelayMonths: 0,
+  secondaryDelayMonths: 4,
+  n1DelayMonths: 12,
+  baseReference: 'souscription',
+  secondaryReference: 'effet',
+  n1Reference: 'effet',
 };
 
 type ChartView = 'cumulatif' | 'mensuel';
@@ -160,6 +178,12 @@ export default function Simulation() {
       tauxBase: rule.tauxBase,
       tauxSecondaire: rule.tauxSecondaire,
       tauxN1: rule.tauxN1,
+      baseDelayMonths: rule.baseDelayMonths ?? 0,
+      secondaryDelayMonths: rule.secondaryDelayMonths ?? 4,
+      n1DelayMonths: rule.n1DelayMonths ?? 12,
+      baseReference: rule.baseReference ?? 'souscription',
+      secondaryReference: rule.secondaryReference ?? 'effet',
+      n1Reference: rule.n1Reference ?? 'effet',
     }));
     toast.success(`"${rule.produit}" appliqué`);
   };
@@ -173,6 +197,12 @@ export default function Simulation() {
       tauxBase: rule.tauxBase,
       tauxSecondaire: rule.tauxSecondaire,
       tauxN1: rule.tauxN1,
+      baseDelayMonths: rule.baseDelayMonths ?? 0,
+      secondaryDelayMonths: rule.secondaryDelayMonths ?? 4,
+      n1DelayMonths: rule.n1DelayMonths ?? 12,
+      baseReference: rule.baseReference ?? 'souscription',
+      secondaryReference: rule.secondaryReference ?? 'effet',
+      n1Reference: rule.n1Reference ?? 'effet',
     }));
     toast.success(`"${rule.produit}" appliqué pour scénario 2`);
   };
@@ -229,6 +259,12 @@ export default function Simulation() {
                 tauxBase: rule.tauxBase,
                 tauxSecondaire: rule.tauxSecondaire,
                 tauxN1: rule.tauxN1,
+                baseDelayMonths: rule.baseDelayMonths ?? 0,
+                secondaryDelayMonths: rule.secondaryDelayMonths ?? 4,
+                n1DelayMonths: rule.n1DelayMonths ?? 12,
+                baseReference: rule.baseReference ?? 'souscription',
+                secondaryReference: rule.secondaryReference ?? 'effet',
+                n1Reference: rule.n1Reference ?? 'effet',
               }));
             } else {
               setP(prev => ({ ...prev, produit: e.target.value }));
@@ -399,9 +435,9 @@ export default function Simulation() {
               <Info size={14} className="text-blue-500 flex-shrink-0" />
               <div className="text-xs text-blue-700">
                 <span style={{ fontWeight: 700 }}>Précompte :</span>{' '}
-                {formatCurrency(params.primeMensuelle * 12 * params.tauxBase / 100)} à la souscription
-                {params.tauxSecondaire > 0 && ` · ${formatCurrency(params.primeMensuelle * 12 * params.tauxSecondaire / 100)} à l'effet (M+1)`}
-                {` · ${formatCurrency(params.primeMensuelle * params.tauxN1 / 100)}/mois en N+1`}
+                {formatCurrency(params.primeMensuelle * 12 * params.tauxBase / 100)} a {params.baseReference ?? 'souscription'} +{params.baseDelayMonths ?? 0} mois
+                {params.tauxSecondaire > 0 && ` · ${formatCurrency(params.primeMensuelle * 12 * params.tauxSecondaire / 100)} a ${params.secondaryReference ?? 'effet'} +${params.secondaryDelayMonths ?? 4} mois`}
+                {` · ${formatCurrency(params.primeMensuelle * params.tauxN1 / 100)}/mois des ${params.n1Reference ?? 'effet'} +${params.n1DelayMonths ?? 12} mois`}
               </div>
             </div>
           )}

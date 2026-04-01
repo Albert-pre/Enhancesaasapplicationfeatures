@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Euro, FileText, Target, TrendingUp, TrendingDown,
   ArrowUpRight, ArrowDownRight, AlertTriangle, Clock,
@@ -11,6 +11,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { MONTHLY_REVENUE, formatCurrency, COMPANY_COLORS, MONTHS_FR } from '../data/mockData';
 import { NavLink } from 'react-router';
+import { contractsService, type CommercialPerformance } from '../services/contractsService';
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -49,76 +50,160 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function Dashboard() {
   const [selectedYear, setSelectedYear] = useState(2026);
+  const [selectedMonth, setSelectedMonth] = useState<number>(-1); // -1 = toute l'annee
+  const [manualActuals, setManualActuals] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem('commissspro_manual_actuals');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
   const { contracts, companies, totalRevenue, forecastRevenue, activeContractsCount, cashFlow, portfolioMetrics, renewalAlerts } = useApp();
+  const [commercialPerformance, setCommercialPerformance] = useState<CommercialPerformance[]>([]);
 
-  const yearData = MONTHLY_REVENUE.filter(d => d.annee === selectedYear);
+  const parseContractDate = (value?: string) => {
+    if (!value) return null;
+    if (value.includes('/')) {
+      const [d, m, y] = value.split('/').map(Number);
+      if (!d || !m || !y) return null;
+      const dt = new Date(y, m - 1, d);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    const dt = new Date(value);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  };
+
+  const startMonth = selectedMonth >= 0 ? selectedMonth : 0;
+  const selectedDate = useMemo(() => new Date(selectedYear, startMonth, 1), [selectedYear, startMonth]);
+
+  const filteredContracts = useMemo(() => {
+    return contracts.filter(c => {
+      const d = parseContractDate(c.dateSouscription) || parseContractDate(c.dateEffet);
+      if (!d) return false;
+      const sameYear = d.getFullYear() === selectedYear;
+      if (!sameYear) return false;
+      if (selectedMonth < 0) return true;
+      return d.getMonth() === selectedMonth;
+    });
+  }, [contracts, selectedYear, selectedMonth]);
+
+  const yearData = useMemo(() => {
+    const base = MONTHLY_REVENUE.filter(d => d.annee === selectedYear);
+    if (selectedMonth < 0) return base;
+    return base.filter(d => MONTHS_FR.indexOf(d.mois) <= selectedMonth);
+  }, [selectedYear, selectedMonth]);
+
+  useEffect(() => {
+    let mounted = true;
+    contractsService.getCommercialPerformance()
+      .then((data) => { if (mounted) setCommercialPerformance(data); })
+      .catch(() => { if (mounted) setCommercialPerformance([]); });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('commissspro_manual_actuals', JSON.stringify(manualActuals));
+  }, [manualActuals]);
 
   // Combine static historical data with contract-based cash flow
+  const cashFlowByMonthLabel = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const cf of cashFlow) {
+      if (cf.year === selectedYear && (selectedMonth < 0 || cf.month <= selectedMonth)) {
+        map.set(MONTHS_FR[cf.month], cf.total);
+      }
+    }
+    return map;
+  }, [cashFlow, selectedYear, selectedMonth]);
+
   const mainChartData = useMemo(() => {
     return yearData.map(d => {
-      const cfEntry = cashFlow.find(cf => cf.year === selectedYear && MONTHS_FR[cf.month] === d.mois);
-      const contractBased = cfEntry ? cfEntry.total : 0;
+      const contractBased = cashFlowByMonthLabel.get(d.mois) || 0;
+      const monthIdx = MONTHS_FR.indexOf(d.mois);
+      const key = `${selectedYear}-${String(monthIdx + 1).padStart(2, '0')}`;
+      const realValue = manualActuals[key];
       return {
         mois: d.mois,
-        'Réel': d.type === 'réel' ? d.montant : null,
+        'Réel': Number.isFinite(realValue) ? realValue : null,
         'Prévision': d.prevu,
         'Contrats': contractBased > 0 ? contractBased : null,
       };
     });
-  }, [yearData, cashFlow, selectedYear]);
+  }, [yearData, cashFlowByMonthLabel, manualActuals, selectedYear]);
 
   // Next 6 months cash flow (upcoming payments)
   const upcomingCashFlow = useMemo(() => {
-    const now = new Date();
     return cashFlow
-      .filter(cf => {
-        const cfDate = new Date(cf.year, cf.month, 1);
-        const diff = (cfDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30);
-        return diff >= 0 && diff <= 6;
-      })
+      .filter(cf => cf.year === selectedYear && cf.month >= startMonth && cf.month < (startMonth + 6))
       .slice(0, 6);
-  }, [cashFlow]);
+  }, [cashFlow, selectedYear, startMonth]);
 
   // Company breakdown
   const companyBreakdown = useMemo(() => {
+    const totals = new Map<string, { total: number; count: number }>();
+    for (const c of filteredContracts) {
+      if (c.statut !== 'Actif') continue;
+      const prev = totals.get(c.compagnie) || { total: 0, count: 0 };
+      totals.set(c.compagnie, { total: prev.total + c.commissionN, count: prev.count + 1 });
+    }
+
     return companies
       .filter(c => c.actif)
       .map(company => {
-        const total = contracts
-          .filter(c => c.compagnie === company.nom && c.statut === 'Actif')
-          .reduce((sum, c) => sum + c.commissionN, 0);
-        const count = contracts.filter(c => c.compagnie === company.nom && c.statut === 'Actif').length;
-        return { name: company.nom, value: total, color: COMPANY_COLORS[company.nom] || company.couleur, count };
+        const entry = totals.get(company.nom) || { total: 0, count: 0 };
+        return { name: company.nom, value: entry.total, color: COMPANY_COLORS[company.nom] || company.couleur, count: entry.count };
       })
       .filter(c => c.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [contracts, companies]);
+  }, [filteredContracts, companies]);
 
-  // Product breakdown
-  const productBreakdown = [
-    { name: 'Santé',      value: contracts.filter(c => c.categorie === 'Santé').reduce((s, c) => s + c.commissionN, 0),      color: '#2563eb' },
-    { name: 'Prévoyance', value: contracts.filter(c => c.categorie === 'Prévoyance').reduce((s, c) => s + c.commissionN, 0), color: '#7c3aed' },
-    { name: 'Obsèques',   value: contracts.filter(c => c.categorie === 'Obsèques').reduce((s, c) => s + c.commissionN, 0),   color: '#0891b2' },
-    { name: 'Animaux',    value: contracts.filter(c => c.categorie === 'Animaux').reduce((s, c) => s + c.commissionN, 0),    color: '#f59e0b' },
-  ].filter(p => p.value > 0);
+  // Product breakdown (memoized)
+  const productBreakdown = useMemo(() => ([
+    { name: 'Santé',      value: filteredContracts.filter(c => c.categorie === 'Santé').reduce((s, c) => s + c.commissionN, 0),      color: '#2563eb' },
+    { name: 'Prévoyance', value: filteredContracts.filter(c => c.categorie === 'Prévoyance').reduce((s, c) => s + c.commissionN, 0), color: '#7c3aed' },
+    { name: 'Obsèques',   value: filteredContracts.filter(c => c.categorie === 'Obsèques').reduce((s, c) => s + c.commissionN, 0),   color: '#0891b2' },
+    { name: 'Animaux',    value: filteredContracts.filter(c => c.categorie === 'Animaux').reduce((s, c) => s + c.commissionN, 0),    color: '#f59e0b' },
+  ]).filter(p => p.value > 0), [filteredContracts]);
 
-  const recentContracts = [...contracts].slice(0, 6);
+  const recentContracts = useMemo(() => [...filteredContracts].slice(0, 6), [filteredContracts]);
 
-  const prevYear2025Total = MONTHLY_REVENUE.filter(d => d.annee === 2025).reduce((s, d) => s + d.montant, 0);
-  const currentReal = MONTHLY_REVENUE.filter(d => d.annee === 2026 && d.type === 'réel').reduce((s, d) => s + d.montant, 0);
-
-  const totalN1 = contracts.reduce((s, c) => s + c.commissionN1, 0);
-  const pipeline = contracts.filter(c => c.statut === 'En attente').reduce((s, c) => s + c.commissionN, 0);
+  const totalNPeriod = useMemo(
+    () => filteredContracts.filter(c => c.statut === 'Actif').reduce((s, c) => s + c.commissionN, 0),
+    [filteredContracts]
+  );
+  const totalN1 = useMemo(() => filteredContracts.reduce((s, c) => s + c.commissionN1, 0), [filteredContracts]);
+  const periodContractsCount = filteredContracts.length;
+  const topCommercials = useMemo(() => commercialPerformance.slice(0, 5), [commercialPerformance]);
+  const totalChargesPeriod = useMemo(
+    () => filteredContracts.reduce((s, c) => s + (c.charge || 0) + (c.depenses || 0) + (c.frais || 0), 0),
+    [filteredContracts]
+  );
+  const totalRealPeriod = useMemo(() => {
+    let total = 0;
+    for (const [k, v] of Object.entries(manualActuals)) {
+      const [y, m] = k.split('-').map(Number);
+      if (y !== selectedYear) continue;
+      if (selectedMonth >= 0 && (m - 1) !== selectedMonth) continue;
+      total += Number(v) || 0;
+    }
+    return total;
+  }, [manualActuals, selectedYear, selectedMonth]);
+  const totalPrevisionPeriod = useMemo(
+    () => yearData.reduce((s, d) => s + (d.prevu || 0), 0),
+    [yearData]
+  );
+  const ecartRealVsPrev = totalRealPeriod - totalPrevisionPeriod;
 
   const kpis = [
     {
       label: 'Commissions Actives',
-      value: formatCurrency(totalRevenue),
+      value: formatCurrency(totalNPeriod),
       change: '+18.4%',
       positive: true,
       icon: Euro,
       gradient: 'from-blue-500 to-blue-700',
-      sub: `${activeContractsCount} contrats actifs`,
+      sub: `${filteredContracts.filter(c => c.statut === 'Actif').length} contrats actifs`,
     },
     {
       label: 'Prévisions N+1',
@@ -130,22 +215,31 @@ export default function Dashboard() {
       sub: 'Renouvellements attendus',
     },
     {
-      label: 'Pipeline En attente',
-      value: formatCurrency(pipeline),
-      change: `${contracts.filter(c => c.statut === 'En attente').length} dossiers`,
+      label: 'Contrats période',
+      value: `${periodContractsCount}`,
+      change: selectedMonth < 0 ? 'Année complète' : `${MONTHS_FR[selectedMonth]} ${selectedYear}`,
       positive: true,
       icon: Clock,
       gradient: 'from-amber-500 to-orange-600',
-      sub: 'À valider',
+      sub: 'Périmètre filtré',
     },
     {
-      label: 'Taux de Renouvellement',
-      value: `${portfolioMetrics.renewalRate}%`,
-      change: '-2.3%',
-      positive: false,
+      label: 'Écart Réel vs Prévision',
+      value: formatCurrency(ecartRealVsPrev),
+      change: formatCurrency(totalRealPeriod),
+      positive: ecartRealVsPrev >= 0,
       icon: RefreshCw,
       gradient: 'from-emerald-500 to-teal-600',
-      sub: 'Objectif 90%',
+      sub: `Prévision: ${formatCurrency(totalPrevisionPeriod)}`,
+    },
+    {
+      label: 'Résultat net période',
+      value: formatCurrency(totalNPeriod - totalChargesPeriod),
+      change: formatCurrency(totalChargesPeriod),
+      positive: (totalNPeriod - totalChargesPeriod) >= 0,
+      icon: Target,
+      gradient: 'from-slate-600 to-slate-800',
+      sub: 'Charges + Dépenses + Frais',
     },
   ];
 
@@ -165,6 +259,16 @@ export default function Dashboard() {
           >
             <option value={2025}>2025</option>
             <option value={2026}>2026</option>
+          </select>
+          <select
+            value={selectedMonth}
+            onChange={e => setSelectedMonth(Number(e.target.value))}
+            className="text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value={-1}>Toute l'année</option>
+            {MONTHS_FR.map((m, idx) => (
+              <option key={m} value={idx}>{m}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -190,7 +294,7 @@ export default function Dashboard() {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         {kpis.map((kpi, i) => {
           const Icon = kpi.icon;
           return (
@@ -210,6 +314,45 @@ export default function Dashboard() {
             </div>
           );
         })}
+      </div>
+
+      {/* Saisie manuelle des encaissements reels */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/60">
+        <div className="mb-3">
+          <h3 className="text-slate-800" style={{ fontWeight: 700 }}>Saisie encaissements réels</h3>
+          <p className="text-slate-400 text-xs mt-0.5">Renseigne les montants réellement encaissés pour comparer avec les prévisions.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {(selectedMonth >= 0 ? [selectedMonth] : MONTHS_FR.map((_, i) => i)).map((monthIdx) => {
+            const storageKey = `${selectedYear}-${String(monthIdx + 1).padStart(2, '0')}`;
+            const value = manualActuals[storageKey] ?? '';
+            return (
+              <label key={storageKey} className="flex items-center justify-between gap-3 border border-slate-100 rounded-xl px-3 py-2.5">
+                <span className="text-sm text-slate-600">{MONTHS_FR[monthIdx]}</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={value}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setManualActuals(prev => {
+                      const next = { ...prev };
+                      if (raw === '') {
+                        delete next[storageKey];
+                      } else {
+                        next[storageKey] = Number(raw);
+                      }
+                      return next;
+                    });
+                  }}
+                  className="w-28 border border-slate-200 rounded-lg px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="0.00"
+                />
+              </label>
+            );
+          })}
+        </div>
       </div>
 
       {/* Main Charts Row */}
@@ -297,6 +440,54 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Top Commercials */}
+      {topCommercials.length > 0 && (
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/60">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-slate-800" style={{ fontWeight: 700 }}>Top Commerciaux</h3>
+              <p className="text-slate-400 text-xs mt-0.5">Basé sur l’attribution · Commissions N + N+1</p>
+            </div>
+            <NavLink to="/revenus" className="text-xs text-blue-600 hover:underline" style={{ fontWeight: 600 }}>
+              Voir détail →
+            </NavLink>
+          </div>
+          <div className="space-y-3">
+            {topCommercials.map((c) => {
+              const max = Math.max(...topCommercials.map(x => x.commissionTotale), 1);
+              const pct = (c.commissionTotale / max) * 100;
+              return (
+                <div key={c.commercial} className="flex items-center gap-4">
+                  <div className="w-40 min-w-0">
+                    <p className="text-sm text-slate-800 truncate" style={{ fontWeight: 600 }}>{c.commercial}</p>
+                    <p className="text-xs text-slate-400">{c.contratsActifs}/{c.contratsTotal} actifs</p>
+                  </div>
+                  <div className="flex-1">
+                    <div className="h-8 bg-slate-100 rounded-xl overflow-hidden">
+                      <div className="h-full bg-blue-600/80 rounded-xl transition-all duration-700" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                  <div className="w-32 text-right">
+                    <p className="text-sm text-slate-800" style={{ fontWeight: 800 }}>{formatCurrency(c.commissionTotale)}</p>
+                    <p className="text-xs text-slate-400">N: {formatCurrency(c.commissionN)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/60 flex items-center justify-between">
+        <div>
+          <h3 className="text-slate-800" style={{ fontWeight: 700 }}>Aperçu P&L global</h3>
+          <p className="text-slate-400 text-xs mt-0.5">Le détail par commercial est disponible dans l’onglet P&L avec filtre période.</p>
+        </div>
+        <NavLink to="/pl" className="text-sm text-blue-600 hover:underline" style={{ fontWeight: 600 }}>
+          Ouvrir P&L →
+        </NavLink>
+      </div>
+
       {/* Upcoming Cash Flow + Portfolio + Recent Contracts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Upcoming Cash Flow — KEY PRO FEATURE */}
@@ -307,7 +498,7 @@ export default function Dashboard() {
             </div>
             <div>
               <h3 className="text-slate-800" style={{ fontWeight: 700 }}>Flux de trésorerie</h3>
-              <p className="text-slate-400 text-xs">6 prochains mois · Basé sur vos contrats</p>
+              <p className="text-slate-400 text-xs">6 mois sur la période sélectionnée ({selectedYear})</p>
             </div>
           </div>
           <div className="space-y-2">
@@ -385,7 +576,8 @@ export default function Dashboard() {
 
           {/* Product Mix */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/60">
-            <h3 className="text-slate-800 mb-3" style={{ fontWeight: 700 }}>Mix Produits</h3>
+            <h3 className="text-slate-800 mb-1" style={{ fontWeight: 700 }}>Mix Produits</h3>
+            <p className="text-slate-400 text-xs mb-3">Répartition des commissions N actives sur la période filtrée.</p>
             <div className="space-y-2">
               {productBreakdown.map((item, i) => {
                 const total = productBreakdown.reduce((s, p) => s + p.value, 0);

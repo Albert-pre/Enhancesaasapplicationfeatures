@@ -16,7 +16,7 @@ export const COMPANIES: Company[] = [
 // ─── COMMISSION RULES (from CSV) ──────────────────────────────────────────────
 export const COMMISSION_RULES: CommissionRule[] = [
   // ── NEOLIANE · Santé ────────────────────────────────────────────────────────
-  { id: 'neo-quietude',   compagnie: 'NEOLIANE', categorie: 'Santé',     produit: 'QUIETUDE',                typeCommission: 'Précompte', tauxTotal: 44,  tauxBase: 36, tauxSecondaire: 8,  tauxQualite: 0,  tauxN1: 10 },
+  { id: 'neo-quietude',   compagnie: 'NEOLIANE', categorie: 'Santé',     produit: 'QUIETUDE',                typeCommission: 'Précompte', tauxTotal: 44,  tauxBase: 36, tauxSecondaire: 8,  tauxQualite: 0,  tauxN1: 10, baseDelayMonths: 5, secondaryDelayMonths: 5, baseReference: 'effet', secondaryReference: 'effet' },
   { id: 'neo-dynamique',  compagnie: 'NEOLIANE', categorie: 'Santé',     produit: 'DYNAMIQUE',               typeCommission: 'Précompte', tauxTotal: 44,  tauxBase: 36, tauxSecondaire: 8,  tauxQualite: 0,  tauxN1: 10 },
   { id: 'neo-perf',       compagnie: 'NEOLIANE', categorie: 'Santé',     produit: 'PERFORMANCE',             typeCommission: 'Précompte', tauxTotal: 44,  tauxBase: 36, tauxSecondaire: 8,  tauxQualite: 0,  tauxN1: 10 },
   { id: 'neo-innov',      compagnie: 'NEOLIANE', categorie: 'Santé',     produit: "INNOV'SANTÉ",             typeCommission: 'Précompte', tauxTotal: 44,  tauxBase: 36, tauxSecondaire: 8,  tauxQualite: 0,  tauxN1: 10 },

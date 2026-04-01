@@ -2,8 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useMe
 import { Contract, CommissionRule, Company, CashFlowEntry, PortfolioMetrics } from '../data/types';
 import { CONTRACTS, COMMISSION_RULES, COMPANIES, MONTHS_FR } from '../data/mockData';
 import { useAuth } from './AuthContext';
-import { isSupabaseConfigured } from '../lib/supabase';
-import { contractsService } from '../services/contractsService';
+import { contractsService, type RemoteCommissionRule } from '../services/contractsService';
 import { companiesService } from '../services/companiesService';
 import { productsService } from '../services/productsService';
 
@@ -54,6 +53,89 @@ interface RenewalAlert {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+function mergeCommissionRulesWithDefaults(storedRules: CommissionRule[]): CommissionRule[] {
+  if (!Array.isArray(storedRules) || storedRules.length === 0) return COMMISSION_RULES;
+
+  const byId = new Map(storedRules.map(rule => [rule.id, rule]));
+
+  return COMMISSION_RULES.map(defaultRule => {
+    const stored = byId.get(defaultRule.id);
+    if (!stored) return defaultRule;
+    return {
+      ...stored,
+      // Always keep delay/reference metadata aligned with current code defaults.
+      baseDelayMonths: defaultRule.baseDelayMonths ?? stored.baseDelayMonths,
+      secondaryDelayMonths: defaultRule.secondaryDelayMonths ?? stored.secondaryDelayMonths,
+      n1DelayMonths: defaultRule.n1DelayMonths ?? stored.n1DelayMonths,
+      baseReference: defaultRule.baseReference ?? stored.baseReference,
+      secondaryReference: defaultRule.secondaryReference ?? stored.secondaryReference,
+      n1Reference: defaultRule.n1Reference ?? stored.n1Reference,
+    };
+  });
+}
+
+function normalizeRemoteCommissionRule(rule: RemoteCommissionRule): CommissionRule {
+  const categorie = (rule.categorie || '').trim() || '*';
+  const id =
+    `${rule.compagnie}__${categorie}__${rule.produit}__${rule.sourceSheet || 'sheet'}`
+      .replace(/\s+/g, '_')
+      .replace(/[^\w.-]/g, '')
+      .toLowerCase();
+
+  return {
+    id,
+    compagnie: rule.compagnie,
+    categorie,
+    produit: rule.produit,
+    typeCommission: rule.typeCommission,
+    tauxTotal: Number(rule.tauxTotal || 0),
+    tauxBase: Number(rule.tauxBase || 0),
+    tauxSecondaire: Number(rule.tauxSecondaire || 0),
+    tauxQualite: Number(rule.tauxQualite || 0),
+    tauxN1: Number(rule.tauxN1 || 0),
+    baseDelayMonths: rule.baseDelayMonths,
+    secondaryDelayMonths: rule.secondaryDelayMonths,
+    n1DelayMonths: rule.n1DelayMonths,
+    baseReference: rule.baseReference,
+    secondaryReference: rule.secondaryReference,
+    n1Reference: rule.n1Reference,
+  };
+}
+
+function parseFrDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  if (value.includes('-')) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const parts = value.split('/');
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts.map(p => Number(p));
+  if (!dd || !mm || !yyyy) return null;
+  const d = new Date(yyyy, mm - 1, dd);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+function getReferenceDate(contract: Contract, reference?: 'souscription' | 'effet' | 'premiere_prime'): Date {
+  const souscription = parseFrDate(contract.dateSouscription);
+  const effet = parseFrDate(contract.dateEffet || contract.dateSouscription);
+
+  if (reference === 'effet') return effet || souscription || new Date(NaN);
+  if (reference === 'premiere_prime') {
+    if (effet) return addMonths(effet, 1);
+    if (souscription) return addMonths(souscription, 1);
+    return new Date(NaN);
+  }
+
+  return souscription || effet || new Date(NaN);
+}
+
 function buildCashFlow(contracts: Contract[]): CashFlowEntry[] {
   const flowMap = new Map<string, { commissionPrincipale: number; commissionSecondaire: number; commissionN1: number }>();
 
@@ -63,23 +145,34 @@ function buildCashFlow(contracts: Contract[]): CashFlowEntry[] {
     if (contract.statut === 'Résilié') return;
 
     if (contract.typeCommission === 'Précompte') {
-      // Commission principale à la souscription
-      const souscDate = new Date(contract.dateSouscription);
-      const k1 = getKey(souscDate.getFullYear(), souscDate.getMonth());
+      // Commission principale (référence + délai configurable)
+      const baseDate = addMonths(
+        getReferenceDate(contract, contract.baseReference),
+        contract.baseDelayMonths ?? 0
+      );
+      if (Number.isNaN(baseDate.getTime())) return;
+      const k1 = getKey(baseDate.getFullYear(), baseDate.getMonth());
       const prev1 = flowMap.get(k1) || { commissionPrincipale: 0, commissionSecondaire: 0, commissionN1: 0 };
       flowMap.set(k1, { ...prev1, commissionPrincipale: prev1.commissionPrincipale + contract.commissionPrincipale });
 
-      // Commission secondaire à la date d'effet
+      // Commission secondaire (référence + délai configurable)
       if (contract.commissionSecondaire > 0) {
-        const effDate = new Date(contract.dateEffet);
-        const k2 = getKey(effDate.getFullYear(), effDate.getMonth());
+        const secondaryDate = addMonths(
+          getReferenceDate(contract, contract.secondaryReference),
+          contract.secondaryDelayMonths ?? 4
+        );
+        if (Number.isNaN(secondaryDate.getTime())) return;
+        const k2 = getKey(secondaryDate.getFullYear(), secondaryDate.getMonth());
         const prev2 = flowMap.get(k2) || { commissionPrincipale: 0, commissionSecondaire: 0, commissionN1: 0 };
         flowMap.set(k2, { ...prev2, commissionSecondaire: prev2.commissionSecondaire + contract.commissionSecondaire });
       }
 
-      // Commission N+1 mensuelle (étalée sur 12 mois, démarrant 12 mois après souscription)
-      const n1Start = new Date(contract.dateSouscription);
-      n1Start.setFullYear(n1Start.getFullYear() + 1);
+      // Commission N+1 mensuelle (référence + délai configurable)
+      const n1Start = addMonths(
+        getReferenceDate(contract, contract.n1Reference),
+        contract.n1DelayMonths ?? 12
+      );
+      if (Number.isNaN(n1Start.getTime())) return;
       const monthlyN1 = contract.commissionN1 / 12;
       for (let m = 0; m < 12; m++) {
         const d = new Date(n1Start);
@@ -91,7 +184,8 @@ function buildCashFlow(contracts: Contract[]): CashFlowEntry[] {
 
     } else {
       // Linéaire: versement mensuel sur 12 mois, puis N+1 idem
-      const startDate = new Date(contract.dateSouscription);
+      const startDate = parseFrDate(contract.dateSouscription) || parseFrDate(contract.dateEffet);
+      if (!startDate) return;
       const monthlyN = contract.commissionN / 12;
       const monthlyN1 = contract.commissionN1 / 12;
 
@@ -168,23 +262,23 @@ function computeRenewalAlerts(contracts: Contract[]): RenewalAlert[] {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const supabaseConfigured = isSupabaseConfigured();
+  const supabaseConfigured = false; // Supabase replaced by Google Sheets
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // State for data
+  // State for data - start empty, will load from Google Sheets
   const [contracts, setContracts] = useState<Contract[]>(() => {
     try {
       const stored = localStorage.getItem('commissspro_contracts');
-      return stored ? JSON.parse(stored) : CONTRACTS;
-    } catch { return CONTRACTS; }
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
   });
 
   const [commissionRules, setCommissionRules] = useState<CommissionRule[]>(() => {
     try {
       const stored = localStorage.getItem('commissspro_rules');
-      return stored ? JSON.parse(stored) : COMMISSION_RULES;
+      return stored ? mergeCommissionRulesWithDefaults(JSON.parse(stored)) : COMMISSION_RULES;
     } catch { return COMMISSION_RULES; }
   });
 
@@ -195,56 +289,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch { return COMPANIES; }
   });
 
-  // Load data from Supabase when user is authenticated
-  const loadData = useCallback(async () => {
-    if (!supabaseConfigured || !user) {
-      return;
-    }
-
+  // Load data from Google Sheets API
+  const loadData = useCallback(async (options?: { forceSync?: boolean }) => {
     setLoading(true);
     setError(null);
 
     try {
-      const [contractsData, companiesData, productsData] = await Promise.all([
-        contractsService.getAll(),
-        companiesService.getAll(),
-        productsService.getAll(),
+      // Load contracts from Google Sheets
+      const [contractsData, rulesData] = await Promise.all([
+        contractsService.getAll({ refreshRules: options?.forceSync }).catch(() => []),
+        contractsService.getCommissionRules({ refresh: options?.forceSync }).catch(() => null),
       ]);
-
-      // If we have data from Supabase, use it; otherwise keep mock data
       if (contractsData.length > 0) {
         setContracts(contractsData);
+        // Store in localStorage as backup
+        localStorage.setItem('commissspro_contracts', JSON.stringify(contractsData));
       }
-      if (companiesData.length > 0) {
-        setCompanies(companiesData);
+
+      if (rulesData?.rules && rulesData.rules.length > 0) {
+        const normalizedRules = rulesData.rules.map(normalizeRemoteCommissionRule);
+        setCommissionRules(normalizedRules);
+        localStorage.setItem('commissspro_rules', JSON.stringify(normalizedRules));
       }
-      if (productsData.length > 0) {
-        setCommissionRules(productsData);
-      }
+
+      console.log('Loaded contracts from Google Sheets:', contractsData.length);
+
     } catch (err) {
       console.error('Error loading data:', err);
-      setError('Erreur lors du chargement des donnees');
+      setError('Erreur lors du chargement des données');
+      // Fallback to localStorage or mock data
+      try {
+        const storedContracts = localStorage.getItem('commissspro_contracts');
+        if (storedContracts) {
+          setContracts(JSON.parse(storedContracts));
+        }
+      } catch (storageErr) {
+        console.error('Error loading from localStorage:', storageErr);
+      }
     } finally {
       setLoading(false);
     }
-  }, [supabaseConfigured, user]);
+  }, []);
 
   // Refresh data function
   const refreshData = useCallback(async () => {
-    await loadData();
+    await loadData({ forceSync: true });
   }, [loadData]);
 
-  // Load data on mount and when user changes
+  // Load data on mount
   useEffect(() => {
-    loadData();
+    loadData({ forceSync: true });
   }, [loadData]);
 
-  // Persist to localStorage when not using Supabase
+  // Auto-sync every 2 minutes to keep dashboard forecasts up to date.
   useEffect(() => {
-    if (!supabaseConfigured) {
-      localStorage.setItem('commissspro_contracts', JSON.stringify(contracts));
-    }
-  }, [contracts, supabaseConfigured]);
+    const timer = window.setInterval(() => {
+      loadData({ forceSync: true }).catch(() => {});
+    }, 120000);
+    return () => window.clearInterval(timer);
+  }, [loadData]);
+
+  // Persist contracts to localStorage (always, since we load from Google Sheets)
+  useEffect(() => {
+    localStorage.setItem('commissspro_contracts', JSON.stringify(contracts));
+  }, [contracts]);
 
   useEffect(() => {
     if (!supabaseConfigured) {
@@ -258,46 +366,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [companies, supabaseConfigured]);
 
-  // Contract operations
+  // Contract operations - always use Google Sheets API
   const addContract = async (contract: Contract) => {
-    if (supabaseConfigured && user) {
-      try {
-        const newContract = await contractsService.create(contract, user.id);
-        setContracts(prev => [newContract, ...prev]);
-      } catch (err) {
-        console.error('Error adding contract:', err);
-        throw err;
-      }
-    } else {
-      setContracts(prev => [contract, ...prev]);
+    try {
+      const newContract = await contractsService.create(contract);
+      setContracts(prev => [newContract, ...prev]);
+    } catch (err) {
+      console.error('Error adding contract:', err);
+      throw err;
     }
   };
 
   const updateContract = async (id: string, updates: Partial<Contract>) => {
-    if (supabaseConfigured && user) {
-      try {
-        const updatedContract = await contractsService.update(id, updates);
-        setContracts(prev => prev.map(c => c.id === id ? updatedContract : c));
-      } catch (err) {
-        console.error('Error updating contract:', err);
-        throw err;
-      }
-    } else {
-      setContracts(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    try {
+      const updatedContract = await contractsService.update(id, updates);
+      setContracts(prev => prev.map(c => c.id === id ? updatedContract : c));
+    } catch (err) {
+      console.error('Error updating contract:', err);
+      throw err;
     }
   };
 
   const deleteContract = async (id: string) => {
-    if (supabaseConfigured && user) {
-      try {
-        await contractsService.delete(id);
-        setContracts(prev => prev.filter(c => c.id !== id));
-      } catch (err) {
-        console.error('Error deleting contract:', err);
-        throw err;
-      }
-    } else {
+    try {
+      await contractsService.delete(id);
       setContracts(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      console.error('Error deleting contract:', err);
+      throw err;
     }
   };
 
@@ -387,15 +483,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const activeContracts = contracts.filter(c => c.statut === 'Actif');
+  const activeContracts = useMemo(
+    () => contracts.filter(c => c.statut === 'Actif'),
+    [contracts]
+  );
 
-  const totalRevenue = useMemo(() =>
-    activeContracts.reduce((sum, c) => sum + c.commissionN, 0),
-    [contracts]);
+  const totalRevenue = useMemo(
+    () => activeContracts.reduce((sum, c) => sum + c.commissionN, 0),
+    [activeContracts]
+  );
 
-  const forecastRevenue = useMemo(() =>
-    contracts.reduce((sum, c) => sum + c.commissionN + c.commissionN1, 0),
-    [contracts]);
+  const forecastRevenue = useMemo(
+    () => contracts.reduce((sum, c) => sum + c.commissionN + c.commissionN1, 0),
+    [contracts]
+  );
 
   const activeContractsCount = activeContracts.length;
 
@@ -404,22 +505,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const renewalAlerts = useMemo(() => computeRenewalAlerts(contracts), [contracts]);
 
   const portfolioMetrics = useMemo((): PortfolioMetrics => {
-    if (activeContracts.length === 0) return {
-      totalCommissionsN: 0, totalCommissionsN1: 0, totalContratsActifs: 0,
-      primeMoyenne: 0, tauxMoyenPortefeuille: 0, concentrationMax: 0, renewalRate: 87
-    };
+    if (activeContracts.length === 0) {
+      return {
+        totalCommissionsN: 0,
+        totalCommissionsN1: 0,
+        totalContratsActifs: 0,
+        primeMoyenne: 0,
+        tauxMoyenPortefeuille: 0,
+        concentrationMax: 0,
+        renewalRate: 87,
+      };
+    }
 
-    const totalN = activeContracts.reduce((s, c) => s + c.commissionN, 0);
-    const totalN1 = activeContracts.reduce((s, c) => s + c.commissionN1, 0);
-    const primeMoyenne = activeContracts.reduce((s, c) => s + c.primeBrute, 0) / activeContracts.length;
-    const tauxMoyen = activeContracts.reduce((s, c) => s + c.tauxCommission, 0) / activeContracts.length;
+    const totalsByCompany = new Map<string, number>();
+    let totalN = 0;
+    let totalN1 = 0;
+    let totalPrime = 0;
+    let totalTaux = 0;
 
-    // Concentration max (% d'une compagnie dans le total)
-    const byCompany = companies.map(comp => ({
-      nom: comp.nom,
-      total: activeContracts.filter(c => c.compagnie === comp.nom).reduce((s, c) => s + c.commissionN, 0)
-    }));
-    const maxCompany = Math.max(...byCompany.map(c => c.total));
+    for (const c of activeContracts) {
+      totalN += c.commissionN;
+      totalN1 += c.commissionN1;
+      totalPrime += c.primeBrute;
+      totalTaux += c.tauxCommission;
+      totalsByCompany.set(c.compagnie, (totalsByCompany.get(c.compagnie) || 0) + c.commissionN);
+    }
+
+    const primeMoyenne = totalPrime / activeContracts.length;
+    const tauxMoyen = totalTaux / activeContracts.length;
+
+    let maxCompany = 0;
+    for (const comp of companies) {
+      maxCompany = Math.max(maxCompany, totalsByCompany.get(comp.nom) || 0);
+    }
     const concentrationMax = totalN > 0 ? (maxCompany / totalN) * 100 : 0;
 
     return {
@@ -431,7 +549,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       concentrationMax,
       renewalRate: 87,
     };
-  }, [contracts, companies]);
+  }, [activeContracts, companies]);
 
   return (
     <AppContext.Provider value={{

@@ -7,6 +7,7 @@ import Produits from './pages/Produits';
 import Revenus from './pages/Revenus';
 import Simulation from './pages/Simulation';
 import Parametres from './pages/Parametres';
+import PL from './pages/PL';
 import Login from './pages/auth/Login';
 import Signup from './pages/auth/Signup';
 import ResetPassword from './pages/auth/ResetPassword';
@@ -44,6 +45,7 @@ export const router = createBrowserRouter([
       { path: 'produits', Component: Produits },
       { path: 'revenus', Component: Revenus },
       { path: 'simulation', Component: Simulation },
+      { path: 'pl', Component: PL },
       { path: 'parametres', Component: Parametres },
     ],
   },
